@@ -10,7 +10,7 @@ sys.path.append(str(package_dir))
 from _version import __version__
 
 setup(
-    name="mlx-lm-lora",
+    name="mlx-lm-lens",
     version=__version__,
     description="Find the hidden meaning of LLMs",
     long_description=open("README.md", encoding="utf-8").read(),
