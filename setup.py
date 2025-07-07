@@ -3,8 +3,11 @@ from setuptools import setup
 import sys
 
 package_dir = Path(__file__).parent / "mlx_lm_lens"
-with open("requirements.txt") as fid:
-    requirements = [l.strip() for l in fid.readlines()]
+try:
+    with open("requirements.txt") as fid:
+        requirements = [l.strip() for l in fid if l.strip()]
+except FileNotFoundError:
+    requirements = ["mlx-lm>=0.25.1", "mlx>=0.26.1"]
 
 sys.path.append(str(package_dir))
 from _version import __version__
@@ -19,7 +22,7 @@ setup(
     author_email="goekdenizguelmez@gmail.com",
     author="Gökdeniz Gülmez",
     url="https://github.com/Goekdeniz-Guelmez/mlx-lm-lens",
-    license="MIT",
+    license="Apache",
     install_requires=requirements,
     packages=["mlx_lm_lens"],
     python_requires=">=3.12",
