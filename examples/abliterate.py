@@ -426,12 +426,12 @@ print(f"Modified separation: {np.mean(mod_harmful_proj) - np.mean(mod_harmless_p
 print(f"Separation reduction: {(np.mean(orig_harmful_proj) - np.mean(orig_harmless_proj)) - (np.mean(mod_harmful_proj) - np.mean(mod_harmless_proj)):.4f}")
 
 # Save modified model
-# save_path = "Qwen3-0.6B-abliterated"
-# save(
-#     src_path=MODEL_ID,
-#     dst_path=save_path,
-#     model=model,
-#     tokenizer=tokenizer,
-#     config=vars(model.args)
-# )
-# print(f"Saved modified model to {save_path}")
+save_path = "Qwen3-0.6B-abliterated"
+save(
+    src_path=MODEL_ID,
+    dst_path=save_path,
+    model=model,
+    tokenizer=tokenizer,
+    config=vars(model.args)
+)
+print(f"Saved modified model to {save_path}")
