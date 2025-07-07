@@ -21,3 +21,5 @@ rad.json
 #Test results file
 TestResults.xml
 test.py
+__pycache__
+.__pycache__

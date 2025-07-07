@@ -1,14 +1,17 @@
-import mlx.core as mx
-import mlx.nn as nn
 import gc
-from mlx_lm.utils import load, save
-from mlx_lm_lens.lm_lens import MLX_LM_Lens_Wrapper
 from tqdm import tqdm
+
 import matplotlib.pyplot as plt
-import numpy as np
+
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import seaborn as sns
+
+import mlx.core as mx
+import numpy as np
+
+from mlx_lm.utils import load, save
+from mlx_lm_lens.lm_lens import MLX_LM_Lens_Wrapper
 
 # Constants
 MODEL_ID = "Qwen/Qwen3-0.6B"
