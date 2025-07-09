@@ -5,11 +5,12 @@ import mlx.nn as nn
 
 
 class MLX_LM_Lens_Wrapper:
-    def __init__(self, model):
+    def __init__(self, model, components_override: Optional[Dict[str, Any]] = None):
         self.model = model
-        self.components = self._identify_model_components()
+        self.components = self._identify_model_components(components_override)
+        self.forward_fn = self._get_forward_fn()
         
-    def _identify_model_components(self) -> Dict[str, Any]:
+    def _identify_model_components(self, components_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Dynamically identify model components using common naming patterns"""
         components = {
             'embeddings': None,
@@ -24,8 +25,10 @@ class MLX_LM_Lens_Wrapper:
             for name in candidates:
                 if hasattr(obj, name):
                     return getattr(obj, name)
-            if recursive and hasattr(obj, 'model'):
-                return find_component(obj.model, candidates, False)
+            if recursive:
+                for sub_attr in ['backbone', 'model', 'transformer']:
+                    if hasattr(obj, sub_attr):
+                        return find_component(getattr(obj, sub_attr), candidates, False)
             return None
         
         # 1. Check for tied embeddings (multiple ways to detect)
@@ -37,7 +40,7 @@ class MLX_LM_Lens_Wrapper:
         )
         
         # 2. Identify embeddings
-        candidates = ['embed_tokens', 'tok_emb', 'embed', 'embeddings', 'wte']
+        candidates = ['embed_tokens', 'tok_emb', 'embd', 'embeddings', 'embed_in', 'embedding', 'wte', 'tok_embeddings']
         components['embeddings'] = find_component(self.model, candidates)
         
         # 3. Identify transformer layers
@@ -69,12 +72,11 @@ class MLX_LM_Lens_Wrapper:
                 # Model has as_linear method (like Qwen)
                 components['lm_head'] = components['embeddings']
                 components['tie_embeddings'] = True
-                print("Using embeddings as LM head via as_linear method")
+                # print("Using embeddings as LM head via as_linear method")
             elif hasattr(components['embeddings'], 'weight'):
                 # Model has weight matrix that can be transposed
                 components['lm_head'] = components['embeddings']
                 components['tie_embeddings'] = True
-                print("Using embeddings as LM head via weight transpose")
             else:
                 # Try to detect if this is a tied embedding model by checking common patterns
                 model_name = str(type(self.model)).lower()
@@ -86,10 +88,10 @@ class MLX_LM_Lens_Wrapper:
         # 7. If tie_embeddings is True from args/config but no lm_head found, use embeddings
         if components['tie_embeddings'] and not components['lm_head'] and components['embeddings']:
             components['lm_head'] = components['embeddings']
-            print("Using embeddings as LM head based on tie_embeddings flag")
         
         # Validation
         if not components['embeddings']:
+            print(f"[DEBUG] Model structure: {self.model}")
             raise RuntimeError("Could not identify embedding layer")
         if not components['transformer_layers']:
             raise RuntimeError("Could not identify transformer layers")
@@ -102,12 +104,15 @@ class MLX_LM_Lens_Wrapper:
             else:
                 raise RuntimeError("Could not identify LM head and no embeddings available")
         
-        print(f"Identified components: "
-              f"Embeddings={type(components['embeddings']).__name__}, "
-              f"Layers={len(components['transformer_layers'])}, "
-              f"Norm={components['norm'] is not None}, "
-              f"LM Head={type(components['lm_head']).__name__}, "
-              f"Tied={components['tie_embeddings']}")
+        # print(f"Identified components: "
+        #       f"Embeddings={type(components['embeddings']).__name__}, "
+        #       f"Layers={len(components['transformer_layers'])}, "
+        #       f"Norm={components['norm'] is not None}, "
+        #       f"LM Head={type(components['lm_head']).__name__}, "
+        #       f"Tied={components['tie_embeddings']}")
+        
+        if components_override:
+            components.update({k: v for k, v in components_override.items() if v is not None})
         
         return components
 
@@ -140,48 +145,107 @@ class MLX_LM_Lens_Wrapper:
         cache: Optional[List[mx.array]] = None,
     ) -> Dict[str, Any]:
         """Core forward pass that captures hidden states"""
+        return self.forward_fn(inputs, mask, cache)
+
+    def _get_forward_fn(self):
+        """Select the appropriate forward function based on model_type."""
+        model_type = getattr(getattr(self.model, "args", None), "model_type", "").lower()
+
+        # Add entries here as needed
+        forward_map = {
+            "afm7": self._forward_afm7,
+            "mamba": self._forward_mamba,
+            # fallback
+            "default": self._forward_default
+        }
+
+        return forward_map.get(model_type, forward_map["default"])
+
+    def _forward_default(self, inputs, mask=None, cache=None):
         c = self.components
         hidden_states = []
-        attention_scores = []  # Placeholder for future implementation
-        
-        # 1. Embed inputs
+        attention_scores = []
+
         h = c['embeddings'](inputs)
         hidden_states.append(h)
-        
-        # 2. Create attention mask if needed
+
         if mask is None:
             mask = self.create_attention_mask(h, cache)
-        
-        # 3. Initialize cache if not provided
+
         if cache is None:
             cache = [None] * len(c['transformer_layers'])
         else:
-            # Ensure cache matches layer count
             cache = cache + [None] * (len(c['transformer_layers']) - len(cache))
-        
-        # 4. Process through transformer layers
+
         for i, layer in enumerate(c['transformer_layers']):
-            # Store input state
             hidden_states.append(h)
-            
-            # Call layer
             h = layer(h, mask, cache=cache[i])
-            
-            # Store output state
             hidden_states.append(h)
-        
-        # 5. Apply final normalization if exists
+
         if c['norm'] is not None:
             h = c['norm'](h)
             hidden_states.append(h)
-        
-        # 6. Generate logits (handling various head types)
+
         logits = self._compute_logits(h)
-        
+
         return {
             "logits": logits,
             "hidden_states": hidden_states,
             "attention_scores": attention_scores
+        }
+    
+    def _forward_afm7(self, inputs, mask=None, cache=None):
+        from mlx_lm.models.cache import ConcatenateKVCache
+        c = self.components
+        hidden_states = []
+        attention_scores = []
+
+        h = c["embeddings"](inputs)
+        hidden_states.append(h)
+
+        if mask is None:
+            mask = self.create_attention_mask(h, cache)
+
+        if cache is None:
+            cache = [None] * len(c["transformer_layers"])
+            cache[-1] = ConcatenateKVCache()
+
+        for layer, c_i in zip(c["transformer_layers"], cache):
+            h = layer(h, mask, cache=c_i)
+            hidden_states.append(h)
+
+        # Reuse KV cache for post-transformer attention
+        keys, values = cache[-1].state
+        for layer in c["kv_reuse_layers"]:
+            h = layer(h, keys, values, mask)
+            hidden_states.append(h)
+
+        h = c["output_norm"](h)
+        hidden_states.append(h)
+
+        logits = c["embeddings"].as_linear(h)
+
+        return {
+            "logits": logits,
+            "hidden_states": hidden_states,
+            "attention_scores": attention_scores
+        }
+
+    def _forward_qwen(self, inputs, mask=None, cache=None):
+        output = self.model(inputs, mask=mask, cache=cache)
+        return {
+            "logits": output,
+            "hidden_states": [output],
+            "attention_scores": []
+        }
+
+    def _forward_mamba(self, inputs, mask=None, cache=None):
+        # Placeholder for mamba-style models
+        output = self.model(inputs)
+        return {
+            "logits": output,
+            "hidden_states": [output],
+            "attention_scores": []
         }
     
     def _compute_logits(self, hidden_states: mx.array) -> mx.array:
@@ -237,7 +301,7 @@ class MLX_LM_Lens_Wrapper:
                 mask = mask[None, None, :, :]
             return mask
 
-    def get_embeds(self, inputs: mx.array) -> mx.array:
+    def get_embeddings(self, inputs: mx.array) -> mx.array:
         """Get input embeddings directly"""
         return self.components['embeddings'](inputs)
     
