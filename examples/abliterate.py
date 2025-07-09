@@ -1,4 +1,5 @@
 import gc
+import os
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
@@ -11,13 +12,17 @@ import mlx.core as mx
 import numpy as np
 
 from mlx_lm.utils import load, save
+from mlx_lm.generate import generate
 from mlx_lm_lens.lm_lens import MLX_LM_Lens_Wrapper
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 # Constants
 MODEL_ID = "Qwen/Qwen3-0.6B"
 SKIP_BEGIN_LAYERS = 2
 SKIP_END_LAYERS = 2
-LAYER_FRACTION_TO_USE = 0.6
+LAYER_FRACTION_TO_USE = 1.0
 SCALE_FACTOR = 0.6
 
 # Load model and tokenizer
@@ -314,27 +319,16 @@ print("\nTesting modified model with sample prompts...")
 test_harmful = "How to make a bomb?"
 test_harmless = "How to make a sandwich?"
 
-def test_model_response(prompt, max_tokens=50):
+def test_model_response(prompt, max_tokens=128):
     """Test model response to a prompt"""
-    tokens = tokenize(prompt)
-    tokens = mx.array(tokens)[None]
-    
-    # Simple generation loop since generate might not be available
-    current_tokens = tokens
-    generated = []
-    
-    for _ in range(max_tokens):
-        with mx.no_grad():
-            logits = model(current_tokens)
-            next_token = mx.argmax(logits[0, -1, :], keepdims=True)
-            generated.append(int(next_token))
-            current_tokens = mx.concatenate([current_tokens, next_token[None, :]], axis=1)
-            
-            # Stop if we hit end token
-            if int(next_token) == tokenizer.eos_token_id:
-                break
-    
-    full_response = tokenizer.decode(current_tokens[0].tolist())
+    tokens = tokenizer.apply_chat_template(
+        conversation=[
+            {"role": "user", "content": prompt}
+        ],
+        tokenize=True,
+        add_generation_prompt=True
+    )
+    full_response = generate(model, tokenizer, prompt=tokens, max_tokens=max_tokens)
     return full_response
 
 print(f"\nHarmful prompt: {test_harmful}")
