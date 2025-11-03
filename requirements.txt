@@ -1,2 +1,4 @@
 mlx-lm>=0.25.1
 mlx>=0.26.1
+scikit-learn>=1.7.2
+matplotlib>=3.10.7

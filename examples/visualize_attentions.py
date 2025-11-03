@@ -45,7 +45,7 @@ def visualize_attention_analysis():
         )
         
         # Get embeddings
-        embeds = model_lens.get_embeds(tokens_array)
+        embeds = model_lens.get_embeddings(tokens_array)
         
         results.append({
             'sentence': sent_data['text'],
