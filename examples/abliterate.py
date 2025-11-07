@@ -25,6 +25,12 @@ SKIP_END_LAYERS = 2
 LAYER_FRACTION_TO_USE = 1.0
 SCALE_FACTOR = 0.6
 
+# Create output directory based on model name
+MODEL_NAME_SAFE = MODEL_ID.replace("/", "_")
+OUTPUT_DIR = f"abliteration_visuals_{MODEL_NAME_SAFE}"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+print(f"Output directory: {OUTPUT_DIR}")
+
 # Load model and tokenizer
 model, tokenizer = load(MODEL_ID)
 model_lens = MLX_LM_Lens_Wrapper(model)
@@ -163,7 +169,7 @@ def visualize_hidden_states(harmful_hidden, harmless_hidden, title_suffix=""):
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(f'hidden_states_visualization{title_suffix.replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{OUTPUT_DIR}/hidden_states_visualization{title_suffix.replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
     plt.show()
     
     return harmful_proj, harmless_proj
@@ -173,7 +179,7 @@ print("Visualizing original hidden states...")
 orig_harmful_proj, orig_harmless_proj = visualize_hidden_states(harmful_hidden, harmless_hidden, " (Original)")
 
 # Save direction vector
-mx.save(MODEL_ID.replace("/", "_") + "_refusal_dir.npy", refusal_dir)
+mx.save(f"{OUTPUT_DIR}/refusal_dir.npy", refusal_dir)
 
 # Store original weights for comparison
 original_weights = {}
@@ -263,7 +269,7 @@ def visualize_weight_changes(original, change, layer_name):
     plt.title(f'{layer_name} - Change Heatmap (Sample)')
     
     plt.tight_layout()
-    plt.savefig(f'{layer_name.replace(" ", "_")}_weight_changes.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{OUTPUT_DIR}/{layer_name.replace(" ", "_")}_weight_changes.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 # Apply modifications with visualization
@@ -412,7 +418,7 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('projection_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{OUTPUT_DIR}/projection_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 print(f"\nSummary of changes:")
@@ -423,10 +429,11 @@ print(f"Modified separation: {np.mean(mod_harmful_proj) - np.mean(mod_harmless_p
 print(f"Separation reduction: {(np.mean(orig_harmful_proj) - np.mean(orig_harmless_proj)) - (np.mean(mod_harmful_proj) - np.mean(mod_harmless_proj)):.4f}")
 
 # Save modified model
-save_path = "Qwen3-0.6B-abliterated"
+save_path = f"{OUTPUT_DIR}/abliterated_model"
+print(f"\nSaving modified model to {save_path}...")
 save(
-    src_path=MODEL_ID,
     dst_path=save_path,
+    src_path_or_repo=MODEL_ID,
     model=model,
     tokenizer=tokenizer,
     config=vars(model.args)
