@@ -1,5 +1,7 @@
 # ✨ MLX-LM-LENS
 
+[![image](https://img.shields.io/pypi/v/mlx-lm-lens.svg)](https://pypi.python.org/pypi/mlx-lm-lens)
+
 Find the hidden meaning of LLMs.
 
 MLX-LM-LENS provides a simple wrapper to inspect hidden states, attention scores, and embedding outputs of MLX-based language models.
